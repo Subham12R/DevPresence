@@ -1,0 +1,7 @@
+agent/**
+dist/**
+src/**
+package-lock.json
+tsconfig.json
+*.vsix
+**/*.map

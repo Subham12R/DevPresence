@@ -1,0 +1,30 @@
+{
+  "name": "dev-presence-api",
+  "version": "1.0.0",
+  "description": "HTTP and Socket.IO service for publishing developer activity presence.",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env server.js",
+    "check": "node --check server.js",
+    "start": "node server.js",
+    "test": "npm run check"
+  },
+  "keywords": [
+    "api",
+    "developer-presence",
+    "express",
+    "socket.io",
+    "status"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}

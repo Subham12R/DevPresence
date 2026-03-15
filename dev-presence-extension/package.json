@@ -1,0 +1,90 @@
+{
+  "name": "dev-presence",
+  "displayName": "Dev Presence",
+  "description": "Broadcasts live coding activity to your portfolio website",
+  "version": "1.0.1",
+  "publisher": "subham",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "keywords": [
+    "vscode",
+    "vscode-extension",
+    "cursor",
+    "presence",
+    "portfolio",
+    "status"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Dev Presence",
+      "properties": {
+        "devPresence.agentUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:7337",
+          "description": "URL of the local dev-presence-agent"
+        },
+        "devPresence.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable activity reporting"
+        },
+        "devPresence.debounceMs": {
+          "type": "number",
+          "default": 2000,
+          "description": "Milliseconds to debounce activity events (default: 2000)"
+        },
+        "devPresence.idleTimeoutMs": {
+          "type": "number",
+          "default": 300000,
+          "description": "Milliseconds of inactivity before reporting idle (default: 5 minutes)"
+        },
+        "devPresence.staleAfterMs": {
+          "type": "number",
+          "default": 600000,
+          "description": "Milliseconds after the last agent update before a session is treated as offline/stale (default: 10 minutes)"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "devPresence.enable",
+        "title": "Dev Presence: Enable"
+      },
+      {
+        "command": "devPresence.disable",
+        "title": "Dev Presence: Disable"
+      },
+      {
+        "command": "devPresence.showStatus",
+        "title": "Dev Presence: Show Status"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -p ./ --watch",
+    "agent": "node --env-file-if-exists=agent/.env agent/server.js",
+    "package": "vsce package --no-dependencies --allow-missing-repository --skip-license"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}

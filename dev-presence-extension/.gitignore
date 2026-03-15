@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+*.vsix
+*.map
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+agent/.env
+
+# Local databases and logs
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode-test/
