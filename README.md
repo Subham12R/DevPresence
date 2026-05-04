@@ -60,6 +60,7 @@ This means:
 - No wasted CPU when you're not coding
 - No manual terminal windows to manage
 - Watcher automatically starts when you open Zed and stops when you close it
+- **Portfolio shows "offline" within 1-2 seconds of closing Zed** (graceful shutdown)
 
 ## Quick Start
 
