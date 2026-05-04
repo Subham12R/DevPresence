@@ -286,6 +286,14 @@ The install script creates two user-level scheduled tasks that run at login:
 | `DevPresenceAgent` | Local agent server | At logon |
 | `DevPresenceWatchdog` | Zed process monitor | At logon |
 
+**Important:** After installing, the tasks won't run until you **log off and back on** (or reboot). To start immediately without rebooting:
+
+```powershell
+Start-ScheduledTask -TaskName "DevPresenceAgent"
+Start-Sleep -Seconds 2
+Start-ScheduledTask -TaskName "DevPresenceWatchdog"
+```
+
 **View tasks:**
 ```powershell
 Get-ScheduledTask -TaskName "DevPresence*"
@@ -293,8 +301,13 @@ Get-ScheduledTask -TaskName "DevPresence*"
 
 **Start/stop manually:**
 ```powershell
+# Start
 Start-ScheduledTask -TaskName "DevPresenceAgent"
+Start-ScheduledTask -TaskName "DevPresenceWatchdog"
+
+# Stop
 Stop-ScheduledTask -TaskName "DevPresenceAgent"
+Stop-ScheduledTask -TaskName "DevPresenceWatchdog"
 ```
 
 **Logs:** Check Event Viewer → Windows Logs → Application for Node.js errors.
@@ -489,6 +502,28 @@ The code references `/icons/zed.png` but the file doesn't exist. Download the Ze
 The agent tracks multiple sessions. The portfolio widget shows the "featured" session (most recently active). To see all sessions:
 ```bash
 curl http://127.0.0.1:7337/status
+```
+
+### Agent/watchdog not running after install
+
+If `devpresence status` shows everything stopped even after installing:
+
+**Cause:** Auto-start tasks/agents only trigger at logon. If you installed while already logged in, they won't start until you reboot.
+
+**Fix:** Either reboot, or start manually:
+
+```powershell
+# Windows
+Start-ScheduledTask -TaskName "DevPresenceAgent"
+Start-ScheduledTask -TaskName "DevPresenceWatchdog"
+
+# macOS
+launchctl start com.devpresence.agent
+launchctl start com.devpresence.watchdog
+
+# Linux
+systemctl --user start devpresence-agent
+systemctl --user start devpresence-watchdog
 ```
 
 ### Wrong project name shown (Zed / file watcher)

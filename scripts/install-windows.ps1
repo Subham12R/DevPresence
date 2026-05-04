@@ -189,9 +189,24 @@ if ($useStartup) {
     Start-Sleep -Milliseconds 800
     Start-Process -FilePath "node" -ArgumentList "watchdog.js" -WorkingDirectory $agentPath -WindowStyle Hidden
 } else {
-    Start-ScheduledTask -TaskName "DevPresenceAgent"
-    Start-Sleep -Milliseconds 800
-    Start-ScheduledTask -TaskName "DevPresenceWatchdog"
+    # Start scheduled tasks and wait for them to actually spawn processes
+    try {
+        Start-ScheduledTask -TaskName "DevPresenceAgent" -ErrorAction Stop
+        Write-Host "[DevPresenceAgent] Task triggered" -ForegroundColor Green
+    } catch {
+        Write-Host "[DevPresenceAgent] Failed to start task. Starting manually..." -ForegroundColor Yellow
+        Start-Process -FilePath "node" -ArgumentList "--env-file-if-exists=agent/.env agent/server.js" -WorkingDirectory $agentPath -WindowStyle Hidden
+    }
+
+    Start-Sleep -Milliseconds 1500
+
+    try {
+        Start-ScheduledTask -TaskName "DevPresenceWatchdog" -ErrorAction Stop
+        Write-Host "[DevPresenceWatchdog] Task triggered" -ForegroundColor Green
+    } catch {
+        Write-Host "[DevPresenceWatchdog] Failed to start task. Starting manually..." -ForegroundColor Yellow
+        Start-Process -FilePath "node" -ArgumentList "watchdog.js" -WorkingDirectory $agentPath -WindowStyle Hidden
+    }
 }
 
 Write-Host ""
@@ -201,3 +216,9 @@ Write-Host "Run this script with -Uninstall to remove." -ForegroundColor Gray
 if ($useStartup) {
     Write-Host "Note: Using Startup folder fallback (Scheduled Tasks require Administrator)." -ForegroundColor DarkGray
 }
+Write-Host ""
+Write-Host "Manual control commands:" -ForegroundColor Cyan
+Write-Host "  Start agent:   Start-ScheduledTask -TaskName 'DevPresenceAgent'" -ForegroundColor Gray
+Write-Host "  Stop agent:    Stop-ScheduledTask -TaskName 'DevPresenceAgent'" -ForegroundColor Gray
+Write-Host "  Start watchdog: Start-ScheduledTask -TaskName 'DevPresenceWatchdog'" -ForegroundColor Gray
+Write-Host "  Stop watchdog:  Stop-ScheduledTask -TaskName 'DevPresenceWatchdog'" -ForegroundColor Gray

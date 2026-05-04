@@ -115,6 +115,90 @@ function isAgentRunning() {
   });
 }
 
+function startAgent() {
+  const existing = getAgentPid();
+  if (existing && isProcessRunning(existing)) {
+    log("watchdog", "Agent already running");
+    return;
+  }
+
+  log("watchdog", "Starting agent...");
+  const child = spawn("node", ["--env-file-if-exists=agent/.env", "agent/server.js"], {
+    cwd: EXTENSION_PATH,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+  log("watchdog", `Agent started (PID ${child.pid})`);
+}
+
+function getAgentPid() {
+  try {
+    if (process.platform === "win32") {
+      const out = execSync('wmic process where "CommandLine like \'%agent/server.js%\'" get ProcessId /value', {
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      const match = out.match(/ProcessId=(\d+)/);
+      return match ? Number(match[1]) : null;
+    }
+    const out = execSync("pgrep -f 'agent/server.js'", { encoding: "utf8", stdio: "pipe" });
+    return Number(out.trim().split("\n")[0]);
+  } catch {
+    return null;
+  }
+}
+
+function sendOfflineToAgent() {
+  return new Promise((resolve) => {
+    const now = Date.now();
+    const payload = {
+      sessionId: "watchdog-offline",
+      editor: "zed",
+      status: "offline",
+      lastSeen: now,
+      lastActiveAt: now,
+      idleDeadlineAt: now,
+      staleAfterMs: 600000,
+      project: null,
+      file: null,
+      language: null,
+      startedAt: now,
+      totalActiveMs: 0,
+    };
+
+    const body = JSON.stringify(payload);
+    const url = new URL(`${AGENT_URL}/activity`);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 80,
+      path: url.pathname,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+      timeout: 5000,
+    };
+
+    const req = require("http").request(options, (res) => {
+      log("watchdog", `Offline sent (HTTP ${res.statusCode})`);
+      resolve();
+    });
+    req.on("error", (err) => {
+      log("watchdog", `Offline send failed: ${err.message}`);
+      resolve();
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      resolve();
+    });
+    req.write(body);
+    req.end();
+  });
+}
+
 function startWatcher() {
   const existingPid = readPidFile(WATCHER_PID_FILE);
   if (existingPid && isProcessRunning(existingPid)) {
@@ -139,20 +223,46 @@ function startWatcher() {
   log("watchdog", `Watcher started (PID ${child.pid})`);
 }
 
-function stopWatcher() {
+async function stopWatcher() {
   const pid = readPidFile(WATCHER_PID_FILE);
   if (!pid) return;
 
-  log("watchdog", "Stopping watcher...");
+  log("watchdog", "Stopping watcher (graceful)...");
 
+  // 1. Send offline to agent first
+  await sendOfflineToAgent();
+
+  // 2. Graceful shutdown: SIGTERM (Unix) or taskkill without /F (Windows)
   try {
     if (process.platform === "win32") {
-      execSync(`taskkill /PID ${pid} /T /F`, { stdio: "pipe" });
+      execSync(`taskkill /PID ${pid} /T`, { stdio: "pipe", timeout: 3000 });
     } else {
       process.kill(pid, "SIGTERM");
     }
-  } catch (err) {
-    log("watchdog", `Failed to stop watcher: ${err.message}`);
+  } catch {
+    // Process may already be gone, that's fine
+  }
+
+  // 3. Wait up to 2s for graceful exit
+  let waited = 0;
+  while (waited < 2000) {
+    if (!isProcessRunning(pid)) break;
+    await new Promise((r) => setTimeout(r, 200));
+    waited += 200;
+  }
+
+  // 4. Force kill if still alive
+  if (isProcessRunning(pid)) {
+    log("watchdog", "Watcher didn't exit gracefully, forcing...");
+    try {
+      if (process.platform === "win32") {
+        execSync(`taskkill /PID ${pid} /T /F`, { stdio: "pipe" });
+      } else {
+        process.kill(pid, "SIGKILL");
+      }
+    } catch (err) {
+      log("watchdog", `Force kill failed: ${err.message}`);
+    }
   }
 
   removePidFile(WATCHER_PID_FILE);
@@ -163,18 +273,24 @@ function stopWatcher() {
 async function tick() {
   if (isShuttingDown) return;
 
-  const agentOk = await isAgentRunning();
   const zedOk = isZedRunning();
 
-  if (!agentOk) {
-    log("watchdog", "Agent not reachable, skipping cycle");
-    return;
-  }
-
   if (zedOk) {
+    // Ensure agent is running before starting watcher
+    const agentOk = await isAgentRunning();
+    if (!agentOk) {
+      startAgent();
+      // Wait for agent to come up
+      let retries = 0;
+      while (retries < 10) {
+        await new Promise((r) => setTimeout(r, 500));
+        if (await isAgentRunning()) break;
+        retries++;
+      }
+    }
     startWatcher();
   } else {
-    stopWatcher();
+    await stopWatcher();
   }
 }
 
@@ -184,10 +300,10 @@ function shutdown() {
 
   log("watchdog", "Shutting down...");
   if (pollTimer) clearInterval(pollTimer);
-  stopWatcher();
-  removePidFile(WATCHDOG_PID_FILE);
-
-  setTimeout(() => process.exit(0), 500);
+  stopWatcher().then(() => {
+    removePidFile(WATCHDOG_PID_FILE);
+    setTimeout(() => process.exit(0), 500);
+  });
 }
 
 async function main() {
