@@ -1,0 +1,7 @@
+id = "dev-presence"
+name = "Dev Presence"
+version = "1.0.1"
+schema_version = 1
+authors = ["Subham12R"]
+description = "Broadcasts live coding activity to your portfolio website"
+repository = "https://github.com/Subham12R/DevPresence.git"

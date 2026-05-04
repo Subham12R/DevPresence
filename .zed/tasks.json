@@ -1,0 +1,20 @@
+[
+  {
+    "label": "dev-presence: start agent",
+    "command": "cd $ZED_WORKTREE_ROOT/dev-presence-extension && npm run agent",
+    "reveal": "never",
+    "hide": "on_success"
+  },
+  {
+    "label": "dev-presence: start zed watcher",
+    "command": "cd $ZED_WORKTREE_ROOT/dev-presence-extension && node zed-watcher.js",
+    "reveal": "never",
+    "hide": "on_success"
+  },
+  {
+    "label": "dev-presence: start all",
+    "command": "cd $ZED_WORKTREE_ROOT/dev-presence-extension && npm run agent",
+    "reveal": "never",
+    "hide": "on_success"
+  }
+]
