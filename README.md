@@ -444,7 +444,7 @@ When `API_URL` is set, the agent forwards snapshots to your remote API:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEV_PRESENCE_AGENT_URL` | `http://127.0.0.1:7337` | Agent URL |
-| `DEV_PRESENCE_WATCH_PATH` | Repo root | Directory to watch |
+| `DEV_PRESENCE_WATCH_PATH` | Parent of repo root | Directory to watch. Defaults to the folder containing the DevPresence repo, so sibling projects are automatically detected. |
 | `POLL_INTERVAL_MS` | `5000` | How often to check for Zed process |
 
 ---
@@ -490,6 +490,25 @@ The agent tracks multiple sessions. The portfolio widget shows the "featured" se
 ```bash
 curl http://127.0.0.1:7337/status
 ```
+
+### Wrong project name shown (Zed / file watcher)
+
+If your portfolio shows the wrong project (e.g., "DevPresence" when you're working on "Noted"):
+
+**Cause:** The watcher is watching the wrong directory. By default it watches the parent of the DevPresence repo.
+
+**Fix:** Set `DEV_PRESENCE_WATCH_PATH` to the parent directory containing all your projects:
+
+```bash
+# Windows
+$env:DEV_PRESENCE_WATCH_PATH="D:\Code"
+node dev-presence-extension/zed-watcher.js
+
+# macOS/Linux
+DEV_PRESENCE_WATCH_PATH=/home/user/projects node dev-presence-extension/zed-watcher.js
+```
+
+Or update your auto-start install script to use the correct path.
 
 ### Windows: "Execution Policy" error
 
