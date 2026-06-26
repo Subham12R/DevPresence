@@ -3,6 +3,8 @@ import * as http from "http";
 import * as https from "https";
 import * as path from "path";
 import * as url from "url";
+import { spawn } from "child_process";
+import { ActivityKind, renderStatusText, isLoopbackAgentUrl } from "./presence";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,8 @@ interface ActivityPayload {
 
 interface Config {
   agentUrl: string;
+  apiUrl: string;
+  apiKey: string;
   enabled: boolean;
   debounceMs: number;
   idleTimeoutMs: number;
@@ -59,6 +63,8 @@ function getConfig(): Config {
 
   return {
     agentUrl: cfg.get<string>("agentUrl", "http://127.0.0.1:7337"),
+    apiUrl: cfg.get<string>("apiUrl", "").trim(),
+    apiKey: cfg.get<string>("apiKey", "").trim(),
     enabled: cfg.get<boolean>("enabled", true),
     debounceMs,
     idleTimeoutMs,
@@ -97,6 +103,73 @@ function postActivity(agentUrl: string, payload: ActivityPayload): void {
   }
 }
 
+// ─── Agent auto-start ──────────────────────────────────────────────────────────
+
+let agentWarningShown = false;
+
+function agentIsReachable(agentUrl: string, timeoutMs = 800): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new url.URL("/status", agentUrl);
+      const opts: http.RequestOptions = {
+        hostname: parsed.hostname,
+        port:     parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+        path:     parsed.pathname,
+        method:   "GET",
+      };
+      const lib = parsed.protocol === "https:" ? https : http;
+      const req = lib.request(opts, (res) => {
+        res.resume();
+        const code = res.statusCode || 0;
+        resolve(code >= 200 && code < 500); // something is listening
+      });
+      req.on("error", () => resolve(false));
+      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
+      req.end();
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function ensureAgentRunning(
+  context: vscode.ExtensionContext,
+  cfg: Config,
+): Promise<void> {
+  // Only manage a loopback agent. A remote agentUrl is assumed to be hosted elsewhere.
+  if (!isLoopbackAgentUrl(cfg.agentUrl)) return;
+  if (await agentIsReachable(cfg.agentUrl)) return; // already running (manual start / another window)
+
+  const agentDir   = path.join(context.extensionPath, "agent");
+  const serverPath = path.join(agentDir, "server.js");
+  const envPath    = path.join(agentDir, ".env");
+
+  // Forwarding config comes from VS Code settings so the bundled agent can
+  // reach a remote API without a `.env` file (which is excluded from the VSIX).
+  const env = { ...process.env };
+  if (cfg.apiUrl) env.API_URL = cfg.apiUrl;
+  if (cfg.apiKey) env.API_KEY = cfg.apiKey;
+
+  try {
+    const child = spawn(
+      "node",
+      [`--env-file-if-exists=${envPath}`, serverPath],
+      { cwd: agentDir, detached: true, stdio: "ignore", windowsHide: true, env },
+    );
+    child.on("error", () => {
+      if (agentWarningShown) return;
+      agentWarningShown = true;
+      vscode.window.showWarningMessage(
+        "Dev Presence: could not start the local agent. Install Node.js 22+ and ensure it is on " +
+        "your PATH, or start the agent manually with `npm run agent`.",
+      );
+    });
+    child.unref(); // let the agent outlive this editor window
+  } catch {
+    // Spawn setup failed — extension still works if the user starts the agent manually.
+  }
+}
+
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
 function getActiveFileInfo(): { project?: string; file?: string; language?: string } {
@@ -124,6 +197,9 @@ function getActiveFileInfo(): { project?: string; file?: string; language?: stri
 let debounceTimer:  ReturnType<typeof setTimeout> | null = null;
 let idleTimer:      ReturnType<typeof setTimeout> | null = null;
 let manuallyPaused  = false;
+let currentKind: ActivityKind = "offline";
+let renderTick = 0;
+let renderTimer: ReturnType<typeof setInterval> | null = null;
 
 const EDITOR = detectEditor();
 let sessionId = createSessionId();
@@ -184,7 +260,7 @@ function buildPayload(
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
-function reportActivity(statusBar: vscode.StatusBarItem): void {
+function reportActivity(statusBar: vscode.StatusBarItem, kind: ActivityKind = "writing"): void {
   const cfg = getConfig();
   if (!cfg.enabled || manuallyPaused) return;
 
@@ -198,7 +274,7 @@ function reportActivity(statusBar: vscode.StatusBarItem): void {
     const payload = buildPayload(cfg, "active", { project, file, language });
 
     postActivity(cfg.agentUrl, payload);
-    updateStatusBar(statusBar, "active");
+    setActivityKind(statusBar, kind);
 
     // Schedule idle after inactivity window
     idleTimer = setTimeout(() => {
@@ -211,35 +287,25 @@ function reportActivity(statusBar: vscode.StatusBarItem): void {
 function reportIdle(agentUrl: string, statusBar: vscode.StatusBarItem): void {
   const payload = buildPayload(getConfig(), "idle");
   postActivity(agentUrl, payload);
-  updateStatusBar(statusBar, "idle");
+  setActivityKind(statusBar, "idle");
 }
 
 function reportOffline(agentUrl: string, statusBar: vscode.StatusBarItem): void {
   const payload = buildPayload(getConfig(), "offline");
   postActivity(agentUrl, payload);
-  updateStatusBar(statusBar, "offline");
+  setActivityKind(statusBar, "offline");
 }
 
 // ─── Status bar ───────────────────────────────────────────────────────────────
 
-function updateStatusBar(
-  item: vscode.StatusBarItem,
-  status: PresenceStatus | "paused",
-): void {
-  const icons: Record<string, string> = {
-    active:  "$(radio-tower)",
-    idle:    "$(clock)",
-    offline: "$(circle-slash)",
-    paused:  "$(debug-pause)",
-  };
-  const labels: Record<string, string> = {
-    active:  "Presence: live",
-    idle:    "Presence: idle",
-    offline: "Presence: offline",
-    paused:  "Presence: paused",
-  };
-  item.text    = `${icons[status]} ${labels[status]}`;
+function renderStatusBar(item: vscode.StatusBarItem): void {
+  item.text = renderStatusText(currentKind, renderTick, getTotalActiveMs(Date.now()));
   item.tooltip = "Dev Presence — click for status";
+}
+
+function setActivityKind(item: vscode.StatusBarItem, kind: ActivityKind): void {
+  currentKind = kind;
+  renderStatusBar(item);
 }
 
 // ─── Activate ────────────────────────────────────────────────────────────────
@@ -252,41 +318,53 @@ export function activate(context: vscode.ExtensionContext): void {
     100,
   );
   statusBar.command = "devPresence.showStatus";
-  updateStatusBar(statusBar, "offline");
+  setActivityKind(statusBar, "offline");
   statusBar.show();
   context.subscriptions.push(statusBar);
+
+  // Live render loop: animates the trailing dots and refreshes the "Active for …" counter.
+  renderTimer = setInterval(() => {
+    renderTick++;
+    renderStatusBar(statusBar);
+  }, 600);
+  context.subscriptions.push({
+    dispose: () => {
+      if (renderTimer) clearInterval(renderTimer);
+      renderTimer = null;
+    },
+  });
 
   // ── Event listeners ─────────────────────────────────────────────────────
 
   context.subscriptions.push(
     // Switching tabs / opening files
     vscode.window.onDidChangeActiveTextEditor(() => {
-      reportActivity(statusBar);
+      reportActivity(statusBar, "reading");
     }),
 
     // Typing in a document
     vscode.workspace.onDidChangeTextDocument((e) => {
       const active = vscode.window.activeTextEditor;
       if (active && e.document === active.document) {
-        reportActivity(statusBar);
+        reportActivity(statusBar, "writing");
       }
     }),
 
     // Saving a file
     vscode.workspace.onDidSaveTextDocument(() => {
-      reportActivity(statusBar);
+      reportActivity(statusBar, "saving");
     }),
 
     // VS Code window focus regained
     vscode.window.onDidChangeWindowState((state) => {
-      if (state.focused) reportActivity(statusBar);
+      if (state.focused) reportActivity(statusBar, "reading");
     }),
 
     // Config changed at runtime
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("devPresence")) {
         const cfg = getConfig();
-        updateStatusBar(statusBar, cfg.enabled && !manuallyPaused ? "active" : "paused");
+        setActivityKind(statusBar, cfg.enabled && !manuallyPaused ? currentKind : "paused");
       }
     }),
   );
@@ -313,7 +391,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (idleTimer)     clearTimeout(idleTimer);
       const cfg = getConfig();
       reportOffline(cfg.agentUrl, statusBar);
-      updateStatusBar(statusBar, "paused");
+      setActivityKind(statusBar, "paused");
       vscode.window.showInformationMessage("Dev Presence paused");
     }),
 
@@ -339,6 +417,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Start the local agent silently if it isn't already running, then announce ourselves.
+  void ensureAgentRunning(context, getConfig());
+
   // Fire once on startup so the agent knows we're alive
   reportActivity(statusBar);
 
@@ -350,6 +431,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   if (idleTimer)     clearTimeout(idleTimer);
+  if (renderTimer) { clearInterval(renderTimer); renderTimer = null; }
 
   // Best-effort offline ping on shutdown
   const cfg = getConfig();

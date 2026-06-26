@@ -1,4 +1,5 @@
-agent/**
+agent/.env
+out/test/**
 dist/**
 src/**
 package-lock.json

@@ -97,7 +97,7 @@ You can install the packaged extension file included in this repo:
 - open the Extensions view
 - select `...`
 - choose `Install from VSIX...`
-- pick `dev-presence-1.0.1.vsix`
+- pick `dev-presence-1.1.0.vsix`
 
 If you are developing the extension yourself, you can also open this project in VS Code and launch an Extension Development Host with `F5`.
 
@@ -205,6 +205,8 @@ The extension contributes these user settings:
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `devPresence.agentUrl` | `http://127.0.0.1:7337` | URL of the local Dev Presence agent |
+| `devPresence.apiUrl` | `""` | Remote API the auto-started agent forwards snapshots to (sets `API_URL`). Empty = local only |
+| `devPresence.apiKey` | `""` | Bearer token for the remote API (sets `API_KEY`); must match the API's `DEV_PRESENCE_SECRET` |
 | `devPresence.enabled` | `true` | Globally enables or disables reporting |
 | `devPresence.debounceMs` | `2000` | Wait time before an activity event is reported |
 | `devPresence.idleTimeoutMs` | `300000` | Inactivity threshold before the session becomes idle |
@@ -232,7 +234,7 @@ The status bar also shows the current state:
 
 ## Local Agent
 
-The local agent lives in [`agent/server.js`](./agent/server.js) and has two main jobs:
+The local agent lives in `agent/server.js` and has two main jobs:
 
 - store presence sessions in SQLite
 - expose a stable status snapshot for local tools or your own API
@@ -372,11 +374,11 @@ If you want the easiest personal-use path, use this checklist:
 2. Copy `agent/.env.example` to `agent/.env`.
 3. Leave `API_URL=` blank.
 4. Run `npm run agent`.
-5. Install `dev-presence-1.0.1.vsix`.
+5. Install `dev-presence-1.1.0.vsix`.
 6. Start coding and verify with `curl http://127.0.0.1:7337/status`.
 
 That gives you a fully local presence tracker with no public exposure.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](./LICENSE).
+This project is licensed under the MIT License.

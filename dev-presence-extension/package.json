@@ -2,7 +2,7 @@
   "name": "dev-presence",
   "displayName": "Dev Presence",
   "description": "Broadcasts live coding activity to your portfolio website",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "publisher": "subham",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -32,6 +32,16 @@
           "type": "string",
           "default": "http://127.0.0.1:7337",
           "description": "URL of the local dev-presence-agent"
+        },
+        "devPresence.apiUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional remote API that receives forwarded presence snapshots (e.g. `https://your-api.example.com/activity`). Passed to the auto-started agent as `API_URL`. Leave empty for local-only use."
+        },
+        "devPresence.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional bearer token for the remote API. Passed to the auto-started agent as `API_KEY`. Must match the API's `DEV_PRESENCE_SECRET`."
         },
         "devPresence.enabled": {
           "type": "boolean",
@@ -74,8 +84,9 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -p ./ --watch",
+    "test": "tsc -p ./ && node --test out/test/presence.test.js",
     "agent": "node --env-file-if-exists=agent/.env agent/server.js",
-    "package": "vsce package --no-dependencies --allow-missing-repository --skip-license"
+    "package": "vsce package --allow-missing-repository --skip-license"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",
