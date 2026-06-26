@@ -74,6 +74,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -p ./ --watch",
+    "test": "tsc -p ./ && node --test out/test/presence.test.js",
     "agent": "node --env-file-if-exists=agent/.env agent/server.js",
     "package": "vsce package --no-dependencies --allow-missing-repository --skip-license"
   },
