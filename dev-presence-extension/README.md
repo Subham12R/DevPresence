@@ -232,7 +232,7 @@ The status bar also shows the current state:
 
 ## Local Agent
 
-The local agent lives in [`agent/server.js`](./agent/server.js) and has two main jobs:
+The local agent lives in `agent/server.js` and has two main jobs:
 
 - store presence sessions in SQLite
 - expose a stable status snapshot for local tools or your own API
@@ -379,4 +379,4 @@ That gives you a fully local presence tracker with no public exposure.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](./LICENSE).
+This project is licensed under the MIT License.
