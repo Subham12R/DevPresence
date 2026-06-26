@@ -3,6 +3,8 @@ import * as http from "http";
 import * as https from "https";
 import * as path from "path";
 import * as url from "url";
+import { spawn } from "child_process";
+import { ActivityKind, renderStatusText, isLoopbackAgentUrl } from "./presence";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -124,6 +126,9 @@ function getActiveFileInfo(): { project?: string; file?: string; language?: stri
 let debounceTimer:  ReturnType<typeof setTimeout> | null = null;
 let idleTimer:      ReturnType<typeof setTimeout> | null = null;
 let manuallyPaused  = false;
+let currentKind: ActivityKind = "offline";
+let renderTick = 0;
+let renderTimer: ReturnType<typeof setInterval> | null = null;
 
 const EDITOR = detectEditor();
 let sessionId = createSessionId();
@@ -184,7 +189,7 @@ function buildPayload(
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
-function reportActivity(statusBar: vscode.StatusBarItem): void {
+function reportActivity(statusBar: vscode.StatusBarItem, kind: ActivityKind = "writing"): void {
   const cfg = getConfig();
   if (!cfg.enabled || manuallyPaused) return;
 
@@ -198,7 +203,7 @@ function reportActivity(statusBar: vscode.StatusBarItem): void {
     const payload = buildPayload(cfg, "active", { project, file, language });
 
     postActivity(cfg.agentUrl, payload);
-    updateStatusBar(statusBar, "active");
+    setActivityKind(statusBar, kind);
 
     // Schedule idle after inactivity window
     idleTimer = setTimeout(() => {
@@ -211,35 +216,25 @@ function reportActivity(statusBar: vscode.StatusBarItem): void {
 function reportIdle(agentUrl: string, statusBar: vscode.StatusBarItem): void {
   const payload = buildPayload(getConfig(), "idle");
   postActivity(agentUrl, payload);
-  updateStatusBar(statusBar, "idle");
+  setActivityKind(statusBar, "idle");
 }
 
 function reportOffline(agentUrl: string, statusBar: vscode.StatusBarItem): void {
   const payload = buildPayload(getConfig(), "offline");
   postActivity(agentUrl, payload);
-  updateStatusBar(statusBar, "offline");
+  setActivityKind(statusBar, "offline");
 }
 
 // ─── Status bar ───────────────────────────────────────────────────────────────
 
-function updateStatusBar(
-  item: vscode.StatusBarItem,
-  status: PresenceStatus | "paused",
-): void {
-  const icons: Record<string, string> = {
-    active:  "$(radio-tower)",
-    idle:    "$(clock)",
-    offline: "$(circle-slash)",
-    paused:  "$(debug-pause)",
-  };
-  const labels: Record<string, string> = {
-    active:  "Presence: live",
-    idle:    "Presence: idle",
-    offline: "Presence: offline",
-    paused:  "Presence: paused",
-  };
-  item.text    = `${icons[status]} ${labels[status]}`;
+function renderStatusBar(item: vscode.StatusBarItem): void {
+  item.text = renderStatusText(currentKind, renderTick, getTotalActiveMs(Date.now()));
   item.tooltip = "Dev Presence — click for status";
+}
+
+function setActivityKind(item: vscode.StatusBarItem, kind: ActivityKind): void {
+  currentKind = kind;
+  renderStatusBar(item);
 }
 
 // ─── Activate ────────────────────────────────────────────────────────────────
@@ -252,41 +247,53 @@ export function activate(context: vscode.ExtensionContext): void {
     100,
   );
   statusBar.command = "devPresence.showStatus";
-  updateStatusBar(statusBar, "offline");
+  setActivityKind(statusBar, "offline");
   statusBar.show();
   context.subscriptions.push(statusBar);
+
+  // Live render loop: animates the trailing dots and refreshes the "Active for …" counter.
+  renderTimer = setInterval(() => {
+    renderTick++;
+    renderStatusBar(statusBar);
+  }, 600);
+  context.subscriptions.push({
+    dispose: () => {
+      if (renderTimer) clearInterval(renderTimer);
+      renderTimer = null;
+    },
+  });
 
   // ── Event listeners ─────────────────────────────────────────────────────
 
   context.subscriptions.push(
     // Switching tabs / opening files
     vscode.window.onDidChangeActiveTextEditor(() => {
-      reportActivity(statusBar);
+      reportActivity(statusBar, "reading");
     }),
 
     // Typing in a document
     vscode.workspace.onDidChangeTextDocument((e) => {
       const active = vscode.window.activeTextEditor;
       if (active && e.document === active.document) {
-        reportActivity(statusBar);
+        reportActivity(statusBar, "writing");
       }
     }),
 
     // Saving a file
     vscode.workspace.onDidSaveTextDocument(() => {
-      reportActivity(statusBar);
+      reportActivity(statusBar, "saving");
     }),
 
     // VS Code window focus regained
     vscode.window.onDidChangeWindowState((state) => {
-      if (state.focused) reportActivity(statusBar);
+      if (state.focused) reportActivity(statusBar, "reading");
     }),
 
     // Config changed at runtime
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("devPresence")) {
         const cfg = getConfig();
-        updateStatusBar(statusBar, cfg.enabled && !manuallyPaused ? "active" : "paused");
+        setActivityKind(statusBar, cfg.enabled && !manuallyPaused ? currentKind : "paused");
       }
     }),
   );
@@ -313,7 +320,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (idleTimer)     clearTimeout(idleTimer);
       const cfg = getConfig();
       reportOffline(cfg.agentUrl, statusBar);
-      updateStatusBar(statusBar, "paused");
+      setActivityKind(statusBar, "paused");
       vscode.window.showInformationMessage("Dev Presence paused");
     }),
 
@@ -350,6 +357,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   if (idleTimer)     clearTimeout(idleTimer);
+  if (renderTimer) { clearInterval(renderTimer); renderTimer = null; }
 
   // Best-effort offline ping on shutdown
   const cfg = getConfig();
