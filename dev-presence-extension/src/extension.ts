@@ -99,6 +99,67 @@ function postActivity(agentUrl: string, payload: ActivityPayload): void {
   }
 }
 
+// ─── Agent auto-start ──────────────────────────────────────────────────────────
+
+let agentWarningShown = false;
+
+function agentIsReachable(agentUrl: string, timeoutMs = 800): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new url.URL("/status", agentUrl);
+      const opts: http.RequestOptions = {
+        hostname: parsed.hostname,
+        port:     parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+        path:     parsed.pathname,
+        method:   "GET",
+      };
+      const lib = parsed.protocol === "https:" ? https : http;
+      const req = lib.request(opts, (res) => {
+        res.resume();
+        const code = res.statusCode || 0;
+        resolve(code >= 200 && code < 500); // something is listening
+      });
+      req.on("error", () => resolve(false));
+      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
+      req.end();
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function ensureAgentRunning(
+  context: vscode.ExtensionContext,
+  cfg: Config,
+): Promise<void> {
+  // Only manage a loopback agent. A remote agentUrl is assumed to be hosted elsewhere.
+  if (!isLoopbackAgentUrl(cfg.agentUrl)) return;
+  if (await agentIsReachable(cfg.agentUrl)) return; // already running (manual start / another window)
+
+  const agentDir   = path.join(context.extensionPath, "agent");
+  const serverPath = path.join(agentDir, "server.js");
+  const envPath    = path.join(agentDir, ".env");
+
+  try {
+    const child = spawn(
+      "node",
+      [`--env-file-if-exists=${envPath}`, serverPath],
+      { cwd: agentDir, detached: true, stdio: "ignore", windowsHide: true },
+    );
+    child.on("error", () => {
+      if (agentWarningShown) return;
+      agentWarningShown = true;
+      vscode.window.showWarningMessage(
+        "Dev Presence: could not start the local agent. Install Node.js 22+ and ensure it is on " +
+        "your PATH, or start the agent manually with `npm run agent`.",
+      );
+    });
+    child.unref(); // let the agent outlive this editor window
+  } catch {
+    // Spawn setup failed — extension still works if the user starts the agent manually.
+  }
+}
+
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
 function getActiveFileInfo(): { project?: string; file?: string; language?: string } {
@@ -345,6 +406,9 @@ export function activate(context: vscode.ExtensionContext): void {
       );
     }),
   );
+
+  // Start the local agent silently if it isn't already running, then announce ourselves.
+  void ensureAgentRunning(context, getConfig());
 
   // Fire once on startup so the agent knows we're alive
   reportActivity(statusBar);
