@@ -97,7 +97,7 @@ You can install the packaged extension file included in this repo:
 - open the Extensions view
 - select `...`
 - choose `Install from VSIX...`
-- pick `dev-presence-1.0.1.vsix`
+- pick `dev-presence-1.1.0.vsix`
 
 If you are developing the extension yourself, you can also open this project in VS Code and launch an Extension Development Host with `F5`.
 
@@ -372,7 +372,7 @@ If you want the easiest personal-use path, use this checklist:
 2. Copy `agent/.env.example` to `agent/.env`.
 3. Leave `API_URL=` blank.
 4. Run `npm run agent`.
-5. Install `dev-presence-1.0.1.vsix`.
+5. Install `dev-presence-1.1.0.vsix`.
 6. Start coding and verify with `curl http://127.0.0.1:7337/status`.
 
 That gives you a fully local presence tracker with no public exposure.
