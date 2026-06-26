@@ -2,7 +2,7 @@
   "name": "dev-presence",
   "displayName": "Dev Presence",
   "description": "Broadcasts live coding activity to your portfolio website",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "subham",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -32,6 +32,16 @@
           "type": "string",
           "default": "http://127.0.0.1:7337",
           "description": "URL of the local dev-presence-agent"
+        },
+        "devPresence.apiUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional remote API that receives forwarded presence snapshots (e.g. `https://your-api.example.com/activity`). Passed to the auto-started agent as `API_URL`. Leave empty for local-only use."
+        },
+        "devPresence.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional bearer token for the remote API. Passed to the auto-started agent as `API_KEY`. Must match the API's `DEV_PRESENCE_SECRET`."
         },
         "devPresence.enabled": {
           "type": "boolean",

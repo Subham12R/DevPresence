@@ -30,6 +30,8 @@ interface ActivityPayload {
 
 interface Config {
   agentUrl: string;
+  apiUrl: string;
+  apiKey: string;
   enabled: boolean;
   debounceMs: number;
   idleTimeoutMs: number;
@@ -61,6 +63,8 @@ function getConfig(): Config {
 
   return {
     agentUrl: cfg.get<string>("agentUrl", "http://127.0.0.1:7337"),
+    apiUrl: cfg.get<string>("apiUrl", "").trim(),
+    apiKey: cfg.get<string>("apiKey", "").trim(),
     enabled: cfg.get<boolean>("enabled", true),
     debounceMs,
     idleTimeoutMs,
@@ -140,11 +144,17 @@ async function ensureAgentRunning(
   const serverPath = path.join(agentDir, "server.js");
   const envPath    = path.join(agentDir, ".env");
 
+  // Forwarding config comes from VS Code settings so the bundled agent can
+  // reach a remote API without a `.env` file (which is excluded from the VSIX).
+  const env = { ...process.env };
+  if (cfg.apiUrl) env.API_URL = cfg.apiUrl;
+  if (cfg.apiKey) env.API_KEY = cfg.apiKey;
+
   try {
     const child = spawn(
       "node",
       [`--env-file-if-exists=${envPath}`, serverPath],
-      { cwd: agentDir, detached: true, stdio: "ignore", windowsHide: true },
+      { cwd: agentDir, detached: true, stdio: "ignore", windowsHide: true, env },
     );
     child.on("error", () => {
       if (agentWarningShown) return;

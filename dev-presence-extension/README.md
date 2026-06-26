@@ -205,6 +205,8 @@ The extension contributes these user settings:
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `devPresence.agentUrl` | `http://127.0.0.1:7337` | URL of the local Dev Presence agent |
+| `devPresence.apiUrl` | `""` | Remote API the auto-started agent forwards snapshots to (sets `API_URL`). Empty = local only |
+| `devPresence.apiKey` | `""` | Bearer token for the remote API (sets `API_KEY`); must match the API's `DEV_PRESENCE_SECRET` |
 | `devPresence.enabled` | `true` | Globally enables or disables reporting |
 | `devPresence.debounceMs` | `2000` | Wait time before an activity event is reported |
 | `devPresence.idleTimeoutMs` | `300000` | Inactivity threshold before the session becomes idle |
