@@ -374,7 +374,146 @@ journalctl --user -u devpresence-watchdog -f
 
 ---
 
+## Deploying the Remote API
+
+The `dev-presence-api` is an optional public HTTP/Socket.IO server that your portfolio reads from. Without it, the local agent only stores data on your machine.
+
+### Prerequisites
+
+- A VPS with Docker and Docker Compose installed
+- A domain name pointed at the VPS (DNS A record)
+- Nginx installed on the host (for the reverse proxy)
+- Certbot for HTTPS
+
+### 1. Create the `.env` file on the server
+
+SSH into your server and create the environment file manually (do **not** commit this):
+
+```bash
+mkdir -p ~/dev-presence-api
+cat > ~/dev-presence-api/.env << 'EOF'
+PORT=4000
+DEV_PRESENCE_SECRET=replace-me-with-a-strong-secret
+REMOTE_STALE_AFTER_MS=120000
+EOF
+```
+
+Generate a strong secret:
+```bash
+openssl rand -hex 32
+```
+
+### 2. Add the Nginx server block
+
+Create `/etc/nginx/sites-available/devpresence`:
+
+```nginx
+server {
+    server_name devpresence.your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Enable it and get a certificate:
+
+```bash
+ln -s /etc/nginx/sites-available/devpresence /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d devpresence.your-domain.com
+```
+
+### 3. First deploy (manual)
+
+```bash
+cd ~/dev-presence-api
+docker compose pull
+docker compose up -d
+```
+
+Verify it's running:
+```bash
+docker compose ps
+curl http://127.0.0.1:4000/status
+```
+
+### 4. Configure the local agent to forward to your API
+
+On your development machine, set `API_URL` and `API_KEY` in `dev-presence-extension/agent/.env`:
+
+```env
+API_URL=https://devpresence.your-domain.com/activity
+API_KEY=your-strong-secret-from-step-1
+PORT=7337
+```
+
+---
+
+## CI/CD with GitHub Actions
+
+Pushing to `main` automatically builds, publishes, and deploys the API.
+
+**Pipeline:** test → build Docker image → push to GitHub Container Registry → SSH deploy to VPS
+
+### Required GitHub Secrets
+
+Go to **Settings → Secrets and variables → Actions** and add:
+
+| Secret | Value |
+|--------|-------|
+| `SERVER_HOST` | VPS IP or hostname |
+| `SERVER_USER` | SSH username (e.g. `ubuntu`, `subham`) |
+| `SSH_PRIVATE_KEY` | Private key whose public key is in `~/.ssh/authorized_keys` on the VPS |
+
+> The SSH connection uses port **2222**. If your VPS uses a different port, update the `port` field in `.github/workflows/deploy.yml`.
+
+### What the pipeline does
+
+1. Runs `npm test` (syntax check) in `dev-presence-api/`
+2. Builds and pushes the Docker image to `ghcr.io/<owner>/dev-presence-api:latest`
+3. SCPs `docker-compose.yml` to `~/dev-presence-api/` on the VPS
+4. SSHs in and runs `docker compose pull && docker compose up -d`
+5. Prunes old images
+
+> The `.env` file on the server is **never touched by CI** — manage it manually as described above.
+
+---
+
 ## Portfolio Integration
+
+### API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/activity` | Bearer token | Ingest a status snapshot from the local agent |
+| `GET` | `/status` | None | Fetch the current public status |
+| Socket.IO | `activity` event | None | Push updates on every ingest |
+
+**`GET /status` response shape:**
+```json
+{
+  "status": "active",
+  "effectiveStatus": "active",
+  "isActive": true,
+  "stale": false,
+  "editor": "zed",
+  "project": "portfolio",
+  "file": "src/app.tsx",
+  "language": "typescript",
+  "lastSeen": 1719000000000,
+  "totalActiveMs": 3600000,
+  "sessionCount": 1
+}
+```
+
+When no update has been received within `REMOTE_STALE_AFTER_MS` (default 2 minutes), `status` and `effectiveStatus` fall back to `"offline"` and `stale` is `true`.
 
 ### Frontend Component
 
