@@ -18,6 +18,7 @@ Deploy `dev-presence-api` to `devpresence.monostack.in` using Docker containers,
 - The VPS already runs Docker and hosts `portfolio-api` (port 5000) and `portfolio-postgres`.
 - The domain `monostack.in` is managed by Cloudflare (DNS + SSL proxy). Subdomain `devpresence.monostack.in` DNS A record already exists and Cloudflare proxy is active (confirmed: returns HTTP/2 502 from CF origin — DNS is done, service not running yet).
 - Existing Nginx is installed on the VPS host and serves `subham12r.me` / `api.subham12r.me`.
+- Certbot (Let's Encrypt) is installed and operational on the VPS for SSL certificate management.
 - GitHub Container Registry is already in use at `ghcr.io/subham12r/`.
 
 ---
@@ -37,7 +38,7 @@ VPS host — Nginx
                                            (port 4000, localhost-only)
 ```
 
-Cloudflare SSL mode: **Flexible** (Cloudflare → VPS uses plain HTTP, no cert needed on server).
+Cloudflare SSL mode: **Full** (Cloudflare → VPS uses HTTPS with a real Let's Encrypt cert issued by Certbot). Certbot manages cert renewal automatically via cron.
 
 ---
 
@@ -102,10 +103,11 @@ Secrets required in GitHub repo settings:
 
 2. **Nginx server block:** Create `/etc/nginx/sites-available/devpresence` with:
    - `server_name devpresence.monostack.in`
-   - Listen on port 80
+   - Listen on port 80 (Certbot will add port 443 + SSL cert paths automatically)
    - `proxy_pass http://127.0.0.1:4000`
    - WebSocket headers: `Upgrade`, `Connection`, `Host`, `X-Real-IP`
    - Symlink to `sites-enabled`, reload Nginx
+   - Run `certbot --nginx -d devpresence.monostack.in` to issue cert and auto-configure HTTPS block
 
 3. **`.env` file on server:** Place at `~/dev-presence-api/.env` with `DEV_PRESENCE_SECRET` and optionally `PORT=4000`, `REMOTE_STALE_AFTER_MS`.
 
@@ -147,7 +149,7 @@ New container running — Compose recreates from new image, removes old
 
 | Concern | Decision |
 |---|---|
-| SSL | Cloudflare handles it — no Certbot needed |
+| SSL | Certbot (Let's Encrypt) on VPS; Cloudflare in Full mode |
 | Secrets | `.env` file on server, not in repo |
 | Restart on crash | `restart: unless-stopped` in compose |
 | State loss on redeploy | Accepted — service is stateless (in-memory only) |
@@ -160,7 +162,7 @@ New container running — Compose recreates from new image, removes old
 ## Out of Scope
 
 - `portfolio-api` production upgrade (separate task, same pattern applies)
-- HTTPS between Cloudflare and VPS (Flexible mode is sufficient)
+- Cloudflare Full Strict mode (would require a Cloudflare Origin Certificate; Full mode with Let's Encrypt is sufficient)
 - Rate limiting, request validation, authenticated reads
 - Multi-instance / shared state
 

@@ -1,0 +1,12 @@
+services:
+  api:
+    image: ghcr.io/subham12r/dev-presence-api:latest
+    container_name: dev-presence-api
+
+    ports:
+      - "127.0.0.1:4000:4000"
+
+    env_file:
+      - .env
+
+    restart: unless-stopped
