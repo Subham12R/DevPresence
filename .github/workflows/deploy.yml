@@ -29,6 +29,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image
+        working-directory: dev-presence-api
         run: |
           docker build \
             -t $IMAGE_NAME:latest \
