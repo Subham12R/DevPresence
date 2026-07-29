@@ -492,7 +492,12 @@ async function forwardSnapshot(snapshot) {
     });
 
     if (!response.ok) {
-      console.log("API forward failed:", response.status);
+      const responseBody = await response.text();
+      console.log(
+        "API forward failed:",
+        response.status,
+        responseBody || "(empty response)",
+      );
     }
   } catch (error) {
     console.log("API forward failed:", error.message);

@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPTS_DIR/.." && pwd)"
 AGENT_PATH="$REPO_ROOT/dev-presence-extension"
+ENV_FILE="$AGENT_PATH/agent/.env"
 WATCHDOG_PATH="$AGENT_PATH/watchdog.js"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
@@ -30,6 +31,12 @@ if [[ ! -f "$WATCHDOG_PATH" ]]; then
     exit 1
 fi
 
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo "Error: agent/.env not found at $ENV_FILE"
+    echo "Create it with: cp agent/.env.example agent/.env"
+    exit 1
+fi
+
 mkdir -p ~/Library/LaunchAgents
 
 # 1. Agent LaunchAgent
@@ -43,6 +50,7 @@ cat > ~/Library/LaunchAgents/com.devpresence.agent.plist <<EOF
     <key>ProgramArguments</key>
     <array>
         <string>$(which node)</string>
+        <string>--env-file-if-exists=$AGENT_PATH/agent/.env</string>
         <string>$AGENT_PATH/agent/server.js</string>
     </array>
     <key>WorkingDirectory</key>
@@ -100,6 +108,8 @@ cat > ~/Library/LaunchAgents/com.devpresence.watchdog.plist <<EOF
 </plist>
 EOF
 
+launchctl unload ~/Library/LaunchAgents/com.devpresence.agent.plist 2>/dev/null || true
+launchctl unload ~/Library/LaunchAgents/com.devpresence.watchdog.plist 2>/dev/null || true
 launchctl load ~/Library/LaunchAgents/com.devpresence.agent.plist
 launchctl load ~/Library/LaunchAgents/com.devpresence.watchdog.plist
 

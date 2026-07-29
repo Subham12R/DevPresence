@@ -1,12 +1,13 @@
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
+
 const { spawn, execSync } = require("child_process");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const EXTENSION_PATH = path.join(REPO_ROOT, "dev-presence-extension");
 const WATCHER_PATH = path.join(EXTENSION_PATH, "zed-watcher.js");
-const PID_DIR = os.tmpdir();
+// Keep PID files in a stable location shared with the shell status command.
+const PID_DIR = process.env.DEV_PRESENCE_PID_DIR || "/tmp";
 const WATCHDOG_PID_FILE = path.join(PID_DIR, "devpresence-watchdog.pid");
 const WATCHER_PID_FILE = path.join(PID_DIR, "devpresence-watcher.pid");
 const AGENT_URL = process.env.DEV_PRESENCE_AGENT_URL || "http://127.0.0.1:7337";
@@ -123,7 +124,7 @@ function startAgent() {
   }
 
   log("watchdog", "Starting agent...");
-  const child = spawn("node", ["--env-file-if-exists=agent/.env", "agent/server.js"], {
+  const child = spawn(process.execPath, ["--env-file-if-exists=agent/.env", "agent/server.js"], {
     cwd: EXTENSION_PATH,
     detached: true,
     stdio: "ignore",
@@ -209,7 +210,7 @@ function startWatcher() {
   log("watchdog", "Starting watcher...");
 
   const env = { ...process.env, DEV_PRESENCE_WATCH_PATH: WATCH_PATH };
-  const child = spawn("node", [WATCHER_PATH], {
+  const child = spawn(process.execPath, [WATCHER_PATH], {
     cwd: EXTENSION_PATH,
     detached: true,
     stdio: "ignore",
